@@ -81,24 +81,14 @@ def rag_answer_stream(question, llm_model, progress=gr.Progress(track_tqdm=True)
         yield f"⏱️ Query time: 0.00 seconds", [["LLM", "None"]], [["RAG", "No relevant Wikipedia content found."]]
         return
     retriever = vectorstore.as_retriever()
-    prompt = PromptTemplate(
-        input_variables=["context", "question"],
-        template=(
-            "Answer the question using ONLY the following context from Wikipedia.\n"
-            "If the answer is not in the context, say 'I don't know.'\n"
-            "\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
-        )
-    )
+    # Concatenate all retrieved docs as context for the prompt
+    relevant_docs = retriever.get_relevant_documents(question)
+    context = "\n\n".join([doc.page_content for doc in relevant_docs])
+    prompt = f"Answer the question using ONLY the following context from Wikipedia.\nIf the answer is not in the context, say 'I don't know.'\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
     llm = OllamaLLM(model=llm_model, streaming=True)
-    rag_chain = (
-        {"context": retriever, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
     answer = ""
     start_time = time.time()
-    for chunk in rag_chain.stream(question):
+    for chunk in llm.stream(prompt):
         answer += chunk
         elapsed = time.time() - start_time
         yield f"⏱️ Query time: {elapsed:.2f} seconds", [["LLM", "Waiting..."]], [["RAG", answer]]
