@@ -71,9 +71,64 @@ def gradio_interface(question, llm_model):
     elapsed = time.time() - start_time
     return (
         f"⏱️ Query time: {elapsed:.2f} seconds",
-        [["RAG", rag_ans]],
-        [["LLM", llm_ans]]
+        [["LLM", llm_ans]],
+        [["RAG", rag_ans]]
     )
+
+def rag_answer_stream(question, llm_model, progress=gr.Progress(track_tqdm=True)):
+    wiki_docs, vectorstore = get_wikipedia_docs_and_vectorstore(question)
+    if not wiki_docs or vectorstore is None:
+        yield f"⏱️ Query time: 0.00 seconds", [["LLM", "None"]], [["RAG", "No relevant Wikipedia content found."]]
+        return
+    retriever = vectorstore.as_retriever()
+    prompt = PromptTemplate(
+        input_variables=["context", "question"],
+        template=(
+            "Answer the question using ONLY the following context from Wikipedia.\n"
+            "If the answer is not in the context, say 'I don't know.'\n"
+            "\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
+        )
+    )
+    llm = OllamaLLM(model=llm_model, streaming=True)
+    rag_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+    answer = ""
+    start_time = time.time()
+    for chunk in rag_chain.stream(question):
+        answer += chunk
+        elapsed = time.time() - start_time
+        yield f"⏱️ Query time: {elapsed:.2f} seconds", [["LLM", "Waiting..."]], [["RAG", answer]]
+
+def llm_only_answer_stream(question, llm_model):
+    llm = OllamaLLM(model=llm_model, streaming=True)
+    answer = ""
+    start_time = time.time()
+    for chunk in llm.stream(question):
+        answer += chunk
+        elapsed = time.time() - start_time
+        yield [["LLM", answer]]
+
+def gradio_interface_stream(question, llm_model, progress=gr.Progress(track_tqdm=True)):
+    try:
+        rag_stream = rag_answer_stream(question, llm_model, progress)
+        rag_time_msg, llm_history, rag_history = next(rag_stream)
+        yield rag_time_msg, llm_history, rag_history
+        for rag_time_msg, llm_history, rag_history in rag_stream:
+            yield rag_time_msg, llm_history, rag_history
+        llm_stream = llm_only_answer_stream(question, llm_model)
+        llm_final = None
+        for llm_history in llm_stream:
+            llm_final = llm_history
+            yield rag_time_msg, llm_history, rag_history
+        if llm_final is not None:
+            yield rag_time_msg, llm_final, rag_history
+    except Exception as e:
+        error_msg = f"Error: {str(e)}"
+        yield "Error", [["LLM", error_msg]], [["RAG", error_msg]]
 
 with gr.Blocks() as demo:
     gr.Markdown("# LangChain RAG with Ollama Demo\nThis is a simple Gradio app demonstrating Retrieval-Augmented Generation (RAG) using LangChain and Ollama.")
@@ -89,16 +144,19 @@ with gr.Blocks() as demo:
     gr.Markdown("## RAG Answer (Wikipedia-Augmented)")
     rag_chat = gr.Chatbot(label="RAG Answer (Wikipedia-Augmented)")
     def on_submit(q, m):
-        return gradio_interface(q, m)
+        # Return the generator directly, not as a tuple/list
+        return gradio_interface_stream(q, m)
     question.submit(
-        on_submit,
+        fn=gradio_interface_stream,
         inputs=[question, llm_model],
-        outputs=[query_time, rag_chat, llm_chat]
+        outputs=[query_time, llm_chat, rag_chat],
+        queue=True
     )
     btn.click(
-        on_submit,
+        fn=gradio_interface_stream,
         inputs=[question, llm_model],
-        outputs=[query_time, rag_chat, llm_chat]
+        outputs=[query_time, llm_chat, rag_chat],
+        queue=True
     )
 
 demo.queue().launch(share=True)
