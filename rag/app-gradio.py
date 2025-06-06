@@ -20,7 +20,7 @@ import time
 from functools import lru_cache
 
 # List of available LLM models
-LLM_MODELS = ["llama2", "mistral", "phi3", "qwen3:1.7b", "gemma3:1b", "deepseek-r1:1.5b"]
+LLM_MODELS = ["llama2",  "qwen3:1.7b", "gemma3:1b", "deepseek-r1:1.5b", "mistral:7b"]
 
 def get_wikipedia_docs_and_vectorstore(question, lang="en", max_docs=5):
     loader = WikipediaLoader(query=question, lang=lang, load_max_docs=max_docs)
@@ -39,9 +39,14 @@ def rag_answer(question, llm_model):
     if not wiki_docs or vectorstore is None:
         return "No relevant Wikipedia content found.", []
     retriever = vectorstore.as_retriever()
+    # More robust prompt for RAG, works better with a variety of models
     prompt = PromptTemplate(
         input_variables=["context", "question"],
-        template="Use the following context to answer the question.\nContext: {context}\nQuestion: {question}\nAnswer:"
+        template=(
+            "Answer the question using ONLY the following context from Wikipedia.\n"
+            "If the answer is not in the context, say 'I don't know.'\n"
+            "\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
+        )
     )
     llm = OllamaLLM(model=llm_model)
     rag_chain = (
