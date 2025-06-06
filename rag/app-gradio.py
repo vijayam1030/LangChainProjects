@@ -69,7 +69,8 @@ def gradio_interface(question):
 def rag_answer_stream(question, progress=gr.Progress(track_tqdm=True)):
     wiki_docs, vectorstore = get_wikipedia_docs_and_vectorstore(question)
     if not wiki_docs or vectorstore is None:
-        yield "No relevant Wikipedia content found.", [], 0.0
+        yield f"⏱️ Query time: 0.00 seconds", [["RAG", "No relevant Wikipedia content found."]], [["LLM", "None"]]
+        return
     retriever = vectorstore.as_retriever()
     prompt = PromptTemplate(
         input_variables=["context", "question"],
@@ -82,14 +83,13 @@ def rag_answer_stream(question, progress=gr.Progress(track_tqdm=True)):
         | llm
         | StrOutputParser()
     )
-    relevant_docs = retriever.get_relevant_documents(question)
-    # Streaming response
     answer = ""
     start_time = time.time()
     for chunk in rag_chain.stream(question):
         answer += chunk
         elapsed = time.time() - start_time
-        yield f"⏱️ Query time: {elapsed:.2f} seconds", answer, elapsed
+        # Only update the last message in the chatbot, not add a new one each time
+        yield f"⏱️ Query time: {elapsed:.2f} seconds", [["RAG", answer]], [["LLM", "..."]]
 
 def llm_only_answer_stream(question):
     llm = OllamaLLM(model="llama2", streaming=True)
@@ -98,29 +98,25 @@ def llm_only_answer_stream(question):
     for chunk in llm.stream(question):
         answer += chunk
         elapsed = time.time() - start_time
-        yield answer, elapsed
+        yield [["LLM", answer]]
 
 def gradio_interface_stream(question, progress=gr.Progress(track_tqdm=True)):
     rag_stream = rag_answer_stream(question, progress)
+    rag_time_msg, rag_history, llm_history = next(rag_stream)
+    # Start LLM stream in parallel
     llm_stream = llm_only_answer_stream(question)
-    rag_time = 0.0
-    rag_ans = ""
-    for rag_time_msg, rag_partial, rag_time in rag_stream:
-        rag_ans = rag_partial
-        yield rag_time_msg, rag_ans, "..."
-    llm_ans = ""
-    llm_time = 0.0
-    for llm_partial, llm_time in llm_stream:
-        llm_ans = llm_partial
-        yield rag_time_msg, rag_ans, llm_ans
+    for rag_time_msg, rag_history, _ in rag_stream:
+        yield rag_time_msg, rag_history, llm_history
+    for llm_history in llm_stream:
+        yield rag_time_msg, rag_history, llm_history
 
 demo = gr.Interface(
     fn=gradio_interface_stream,
     inputs=gr.Textbox(label="Enter your question:"),
     outputs=[
         gr.Textbox(label="Query Time"),
-        gr.Textbox(label="RAG Answer (Wikipedia-Augmented)"),
-        gr.Textbox(label="LLM-Only Answer (No Wikipedia)")
+        gr.Chatbot(label="RAG Answer (Wikipedia-Augmented)"),
+        gr.Chatbot(label="LLM-Only Answer (No Wikipedia)")
     ],
     title="LangChain RAG with Ollama Demo",
     description="This is a simple Gradio app demonstrating Retrieval-Augmented Generation (RAG) using LangChain and Ollama.",
