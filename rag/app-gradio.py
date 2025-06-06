@@ -66,8 +66,56 @@ def gradio_interface(question):
         llm_ans if llm_ans else "None"
     )
 
+def rag_answer_stream(question, progress=gr.Progress(track_tqdm=True)):
+    wiki_docs, vectorstore = get_wikipedia_docs_and_vectorstore(question)
+    if not wiki_docs or vectorstore is None:
+        yield "No relevant Wikipedia content found.", [], 0.0
+    retriever = vectorstore.as_retriever()
+    prompt = PromptTemplate(
+        input_variables=["context", "question"],
+        template="Use the following context to answer the question.\nContext: {context}\nQuestion: {question}\nAnswer:"
+    )
+    llm = OllamaLLM(model="llama2", streaming=True)
+    rag_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+    relevant_docs = retriever.get_relevant_documents(question)
+    # Streaming response
+    answer = ""
+    start_time = time.time()
+    for chunk in rag_chain.stream(question):
+        answer += chunk
+        elapsed = time.time() - start_time
+        yield f"⏱️ Query time: {elapsed:.2f} seconds", answer, elapsed
+
+def llm_only_answer_stream(question):
+    llm = OllamaLLM(model="llama2", streaming=True)
+    answer = ""
+    start_time = time.time()
+    for chunk in llm.stream(question):
+        answer += chunk
+        elapsed = time.time() - start_time
+        yield answer, elapsed
+
+def gradio_interface_stream(question, progress=gr.Progress(track_tqdm=True)):
+    rag_stream = rag_answer_stream(question, progress)
+    llm_stream = llm_only_answer_stream(question)
+    rag_time = 0.0
+    rag_ans = ""
+    for rag_time_msg, rag_partial, rag_time in rag_stream:
+        rag_ans = rag_partial
+        yield rag_time_msg, rag_ans, "..."
+    llm_ans = ""
+    llm_time = 0.0
+    for llm_partial, llm_time in llm_stream:
+        llm_ans = llm_partial
+        yield rag_time_msg, rag_ans, llm_ans
+
 demo = gr.Interface(
-    fn=gradio_interface,
+    fn=gradio_interface_stream,
     inputs=gr.Textbox(label="Enter your question:"),
     outputs=[
         gr.Textbox(label="Query Time"),
@@ -75,9 +123,10 @@ demo = gr.Interface(
         gr.Textbox(label="LLM-Only Answer (No Wikipedia)")
     ],
     title="LangChain RAG with Ollama Demo",
-    description="This is a simple Gradio app demonstrating Retrieval-Augmented Generation (RAG) using LangChain and Ollama."
+    description="This is a simple Gradio app demonstrating Retrieval-Augmented Generation (RAG) using LangChain and Ollama.",
+    allow_flagging="never",
+    live=False,
+    concurrency_limit=1
 )
 
-if __name__ == "__main__":
-    # Launch Gradio app and print the shareable link
-    demo.launch(share=True)
+demo.queue().launch(share=True)
