@@ -20,7 +20,7 @@ import time
 from functools import lru_cache
 
 # List of available LLM models
-LLM_MODELS = ["llama2", "mistral", "phi3"]
+LLM_MODELS = ["llama2", "mistral", "phi3", "qwen3:1.7b", "gemma3:1b", "deepseek-r1:1.5b"]
 
 def get_wikipedia_docs_and_vectorstore(question, lang="en", max_docs=5):
     loader = WikipediaLoader(query=question, lang=lang, load_max_docs=max_docs)
@@ -91,7 +91,9 @@ def rag_answer_stream(question, llm_model, progress=gr.Progress(track_tqdm=True)
     for chunk in rag_chain.stream(question):
         answer += chunk
         elapsed = time.time() - start_time
-        yield f"⏱️ Query time: {elapsed:.2f} seconds", [["RAG", answer]], [["LLM", "..."]]
+        # Always yield both RAG and LLM-only answers, updating the RAG chatbot
+        yield f"⏱️ Query time: {elapsed:.2f} seconds", [["RAG", answer]], [["LLM", "Waiting..."]]
+    # After RAG is done, yield final RAG and let LLM-only stream start
 
 def llm_only_answer_stream(question, llm_model):
     llm = OllamaLLM(model=llm_model, streaming=True)
@@ -105,11 +107,18 @@ def llm_only_answer_stream(question, llm_model):
 def gradio_interface_stream(question, llm_model, progress=gr.Progress(track_tqdm=True)):
     rag_stream = rag_answer_stream(question, llm_model, progress)
     rag_time_msg, rag_history, llm_history = next(rag_stream)
-    llm_stream = llm_only_answer_stream(question, llm_model)
+    yield rag_time_msg, rag_history, llm_history
     for rag_time_msg, rag_history, _ in rag_stream:
         yield rag_time_msg, rag_history, llm_history
+    # Now start LLM-only stream
+    llm_stream = llm_only_answer_stream(question, llm_model)
+    llm_final = None
     for llm_history in llm_stream:
+        llm_final = llm_history
         yield rag_time_msg, rag_history, llm_history
+    # After LLM-only is done, yield both final answers one last time (ensures both are visible)
+    if llm_final is not None:
+        yield rag_time_msg, rag_history, llm_final
 
 with gr.Blocks() as demo:
     gr.Markdown("# LangChain RAG with Ollama Demo\nThis is a simple Gradio app demonstrating Retrieval-Augmented Generation (RAG) using LangChain and Ollama.")
@@ -117,13 +126,12 @@ with gr.Blocks() as demo:
         question = gr.Textbox(label="Enter your question:")
     with gr.Row():
         llm_model = gr.Dropdown(choices=LLM_MODELS, value="llama2", label="LLM Model (for both RAG and LLM-only)")
+        btn = gr.Button("Submit", variant="primary")
     with gr.Row():
         query_time = gr.Textbox(label="Query Time")
     with gr.Row():
         rag_chat = gr.Chatbot(label="RAG Answer (Wikipedia-Augmented)")
         llm_chat = gr.Chatbot(label="LLM-Only Answer (No Wikipedia)")
-    with gr.Row():
-        btn = gr.Button("Submit", variant="primary")
     btn.click(
         gradio_interface_stream,
         inputs=[question, llm_model],
