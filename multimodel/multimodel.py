@@ -57,7 +57,7 @@ def multi_model_stream_interface(question, progress=gr.Progress(track_tqdm=True)
     yield tuple(outputs)
 
 with gr.Blocks() as demo:
-    gr.Markdown("# LangChain LLM Multi-Model Demo\nThis app runs your question on multiple models in parallel and shows LLM-only answers for each.")
+    gr.Markdown("# LLM Multi-Model \nThis app runs your question on multiple models in parallel and shows LLM-only answers for each.")
     with gr.Row():
         question = gr.Textbox(label="Enter your question:")
         btn = gr.Button("Submit", variant="primary")
