@@ -15,6 +15,8 @@ from langchain.schema.output_parser import StrOutputParser
 # Import WikipediaLoader to fetch Wikipedia articles
 from langchain_community.document_loaders import WikipediaLoader
 import time
+import threading
+import queue
 
 # Cache Wikipedia docs and their embeddings/vectorstore for each question
 from functools import lru_cache
@@ -156,6 +158,62 @@ def multi_model_interface(question):
     elapsed = time.time() - start_time
     return results, f"⏱️ Query time: {elapsed:.2f} seconds"
 
+def run_rag_stream_for_model(question, model_id, out_queue, label):
+    wiki_docs, vectorstore = get_wikipedia_docs_and_vectorstore(question)
+    if not wiki_docs or vectorstore is None:
+        out_queue.put((label, "RAG", "No relevant Wikipedia content found."))
+        return
+    retriever = vectorstore.as_retriever()
+    relevant_docs = retriever.get_relevant_documents(question)
+    context = "\n\n".join([doc.page_content for doc in relevant_docs])
+    prompt = f"Answer the question using ONLY the following context from Wikipedia.\nIf the answer is not in the context, say 'I don't know.'\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
+    llm = OllamaLLM(model=model_id, streaming=True)
+    answer = ""
+    for chunk in llm.stream(prompt):
+        answer += chunk
+        out_queue.put((label, "RAG", answer))
+
+def run_llm_stream_for_model(question, model_id, out_queue, label):
+    llm = OllamaLLM(model=model_id, streaming=True)
+    answer = ""
+    for chunk in llm.stream(question):
+        answer += chunk
+        out_queue.put((label, "LLM", answer))
+
+def multi_model_stream_interface(question, progress=gr.Progress(track_tqdm=True)):
+    out_queue = queue.Queue()
+    threads = []
+    for model_id, model_label in LLM_MODELS:
+        t1 = threading.Thread(target=run_rag_stream_for_model, args=(question, model_id, out_queue, model_label))
+        t2 = threading.Thread(target=run_llm_stream_for_model, args=(question, model_id, out_queue, model_label))
+        t1.start()
+        t2.start()
+        threads.extend([t1, t2])
+    answers = {label: {"RAG": "", "LLM": ""} for _, label in LLM_MODELS}
+    finished = 0
+    total = len(LLM_MODELS) * 2
+    start_time = time.time()
+    while finished < total:
+        try:
+            label, typ, ans = out_queue.get(timeout=0.1)
+            answers[label][typ] = ans
+            elapsed = time.time() - start_time
+            outputs = [f"⏱️ Query time: {elapsed:.2f} seconds"]
+            for _, model_label in LLM_MODELS:
+                outputs.append(answers[model_label]["RAG"])
+                outputs.append(answers[model_label]["LLM"])
+            yield tuple(outputs)
+        except queue.Empty:
+            pass
+        finished = sum([t.done() if hasattr(t, 'done') else not t.is_alive() for t in threads])
+    # Final yield to ensure all answers are shown
+    elapsed = time.time() - start_time
+    outputs = [f"⏱️ Query time: {elapsed:.2f} seconds"]
+    for _, model_label in LLM_MODELS:
+        outputs.append(answers[model_label]["RAG"])
+        outputs.append(answers[model_label]["LLM"])
+    yield tuple(outputs)
+
 with gr.Blocks() as demo:
     gr.Markdown("# LangChain RAG Multi-Model Demo\nThis app runs your question on multiple models in parallel and shows RAG and LLM-only answers for each.")
     with gr.Row():
@@ -169,21 +227,19 @@ with gr.Blocks() as demo:
             output_sections[model_label + "_rag"] = gr.Textbox(label=f"{model_label} RAG Answer")
             output_sections[model_label + "_llm"] = gr.Textbox(label=f"{model_label} LLM-Only Answer")
     def on_submit(q):
-        results, elapsed = multi_model_interface(q)
-        outputs = [elapsed]
-        for model_id, model_label in LLM_MODELS:
-            outputs.append(results[model_label]["RAG"])
-            outputs.append(results[model_label]["LLM"])
-        return outputs
+        yield from multi_model_stream_interface(q)
+    # Remove the on_submit wrapper and pass the generator directly
     btn.click(
         on_submit,
         inputs=[question],
-        outputs=[query_time] + [output_sections[model_label + "_rag"] for _, model_label in LLM_MODELS] + [output_sections[model_label + "_llm"] for _, model_label in LLM_MODELS]
+        outputs=[query_time] + [output_sections[model_label + "_rag"] for _, model_label in LLM_MODELS] + [output_sections[model_label + "_llm"] for _, model_label in LLM_MODELS],
+        queue=True
     )
     question.submit(
         on_submit,
         inputs=[question],
-        outputs=[query_time] + [output_sections[model_label + "_rag"] for _, model_label in LLM_MODELS] + [output_sections[model_label + "_llm"] for _, model_label in LLM_MODELS]
+        outputs=[query_time] + [output_sections[model_label + "_rag"] for _, model_label in LLM_MODELS] + [output_sections[model_label + "_llm"] for _, model_label in LLM_MODELS],
+        queue=True
     )
 
 demo.queue().launch(share=True)
