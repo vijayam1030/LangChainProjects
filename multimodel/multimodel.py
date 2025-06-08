@@ -2,6 +2,7 @@
 import gradio as gr
 # Import Ollama LLM from langchain_ollama (for LLM-only answers)
 from langchain_ollama import OllamaLLM
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import threading
 import queue
@@ -52,7 +53,7 @@ def multi_model_stream_interface(question, progress=gr.Progress(track_tqdm=True)
             yield tuple(outputs)
         except queue.Empty:
             pass
-        finished = sum([t.done() if hasattr(t, 'done') else not t.is_alive() for t in threads])
+        finished = sum([not t.is_alive() for t in threads])
     # Final yield to ensure all answers are shown
     elapsed = time.time() - start_time
     outputs = [f"⏱️ Query time: {elapsed:.2f} seconds"]
