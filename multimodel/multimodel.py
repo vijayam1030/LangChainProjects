@@ -16,7 +16,7 @@ LLM_MODELS = [
     ("phi3:3.8b", "Phi 3 3.8B"),
     ("tinyllama:1.1b", "TinyLlama 1.1B"),
     ("dolphin3:8b", "Dolphin 3 8B"),
-    ("llama2-uncensored:7b", "Llama 2  7B"),
+    ("llama2-uncensored:7b", "Llama 2 U 7B"),
 ]
 
 def llm_only_answer(question, llm_model):
