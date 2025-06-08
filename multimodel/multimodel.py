@@ -12,7 +12,11 @@ LLM_MODELS = [
     ("qwen3:1.7b", "Qwen 3 1.7B"),
     ("gemma3:1b", "Gemma 3 1B"),
     ("deepseek-r1:1.5b", "DeepSeek R1 1.5B"),
-    ("mistral:7b", "Mistral 7B")
+    ("mistral:7b", "Mistral 7B"),
+    ("phi3:3.8b", "Phi 3 3.8B"),
+    ("tinyllama:1.1b", "TinyLlama 1.1B"),
+    ("dolphin3:8b", "Dolphin 3 8B"),
+    ("llama2-uncensored:7b", "Llama 2  7B"),
 ]
 
 def llm_only_answer(question, llm_model):

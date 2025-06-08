@@ -1,0 +1,11 @@
+# LangChain and Ollama dependencies
+langchain
+langchain-community
+ollama
+langchain_ollama
+faiss-cpu
+wikipedia
+streamlit
+nbformat
+nbconvert
+gradio
