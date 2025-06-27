@@ -9,5 +9,4 @@ streamlit
 nbformat
 nbconvert
 requests
-gradio
-gradio
+gradio>=4.0.0

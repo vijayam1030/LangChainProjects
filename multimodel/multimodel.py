@@ -49,70 +49,146 @@ def run_model_sequentially(question, model_id, model_label):
         print(error_msg)
         return error_msg
 
-def multi_model_sequential_interface(question, progress=gr.Progress(track_tqdm=True)):
-    """Process all models sequentially instead of concurrently"""
-    print(f"Starting sequential processing for: {question[:50]}...")
+def multi_model_sequential_interface(question):
+    """Process all models sequentially with real-time streaming results"""
+    print(f"🚀 STREAMING: Starting sequential processing for: {question[:50]}...")
     start_time = time.time()
     
     results = {}
     
-    # Process each model one at a time
+    # Initialize all outputs with "⏳ Waiting..." status
+    initial_outputs = [f"🚀 Starting processing... (0/{len(LLM_MODELS)} complete)"]
+    for _, label in LLM_MODELS:
+        initial_outputs.append("⏳ Waiting...")
+    
+    print(f"🔄 STREAMING: Yielding initial state")
+    yield initial_outputs
+    time.sleep(0.5)  # Small delay to make streaming visible
+    
+    # Process each model one at a time and stream results immediately
     for i, (model_id, model_label) in enumerate(LLM_MODELS):
-        if progress:
-            progress(i / len(LLM_MODELS), desc=f"Processing {model_label}")
+        # Update status to show current model being processed
+        processing_outputs = [f"🔄 Processing {model_label}... ({i}/{len(LLM_MODELS)} complete)"]
+        for _, label in LLM_MODELS:
+            if label == model_label:
+                processing_outputs.append("🔄 Processing...")
+            else:
+                processing_outputs.append(results.get(label, "⏳ Waiting..."))
         
+        print(f"🔄 STREAMING: Yielding processing state for {model_label}")
+        yield processing_outputs
+        time.sleep(0.3)  # Small delay to make streaming visible
+        
+        # Run the model
+        print(f"🤖 PROCESSING: Running {model_label}...")
         result = run_model_sequentially(question, model_id, model_label)
         results[model_label] = result
+        print(f"✅ COMPLETED: {model_label} finished")
         
-        # Yield intermediate results
+        # Stream the result immediately after completion
         elapsed = time.time() - start_time
-        outputs = [f"⏱️ Query time: {elapsed:.2f} seconds (Processing {i+1}/{len(LLM_MODELS)})"]
+        outputs = [f"⏱️ Query time: {elapsed:.2f} seconds ({i+1}/{len(LLM_MODELS)} complete)"]
         
         for _, label in LLM_MODELS:
-            outputs.append(results.get(label, "Waiting..."))
+            if label in results:
+                outputs.append(f"✅ {results[label]}")
+            else:
+                outputs.append("⏳ Waiting...")
         
-        yield tuple(outputs)
+        print(f"✅ STREAMING: Yielding result for {model_label}")
+        yield outputs
+        time.sleep(0.2)  # Small delay before next model
     
-    # Final result
+    # Final result with completion status
     elapsed = time.time() - start_time
-    outputs = [f"⏱️ Total time: {elapsed:.2f} seconds (Complete!)"]
+    outputs = [f"🎉 All models complete! Total time: {elapsed:.2f} seconds"]
     for _, label in LLM_MODELS:
-        outputs.append(results.get(label, "Error"))
+        outputs.append(f"✅ {results.get(label, '❌ Error')}")
     
-    yield tuple(outputs)
+    print(f"🎉 STREAMING: Yielding final results")
+    yield outputs
 
 with gr.Blocks() as demo:
-    gr.Markdown("# LLM Multi-Model (Sequential Version)\nThis app runs your question on multiple models sequentially to avoid connection issues.")
+    gr.Markdown("# 🚀 LLM Multi-Model (Real-time Streaming)\nThis app processes your question across multiple models **sequentially** and streams results in real-time as each model completes. No need to wait for everything to finish!")
     
     with gr.Row():
-        question = gr.Textbox(label="Enter your question:")
-        btn = gr.Button("Submit", variant="primary")
+        question = gr.Textbox(label="Enter your question:", placeholder="Ask anything... results will stream as each model completes!")
+        btn = gr.Button("🚀 Submit", variant="primary")
+    
+    with gr.Row():
+        demo_btn = gr.Button("🎭 Demo Mode (Test Streaming)", variant="secondary")
     
     query_time = gr.Textbox(label="Status")
     
-    output_sections = {}
+    output_sections = []
     for model_id, model_label in LLM_MODELS:
         with gr.Column():
             gr.Markdown(f"### {model_label}")
-            output_sections[model_label + "_llm"] = gr.Textbox(label=f"{model_label} Answer", lines=4)
+            output_sections.append(gr.Textbox(label=f"{model_label} Answer", lines=4))
+    
+    def demo_mode():
+        """Demo mode with fake responses to test streaming"""
+        print("🎭 DEMO MODE: Starting fake streaming demo...")
+        
+        # Initialize
+        outputs = ["🎭 Demo Mode: Testing streaming..."] + ["⏳ Waiting..."] * len(LLM_MODELS)
+        yield outputs
+        time.sleep(1)
+        
+        # Process each "model" quickly
+        for i, (_, model_label) in enumerate(LLM_MODELS):
+            # Processing state
+            outputs = [f"🔄 Demo: Processing {model_label}... ({i}/{len(LLM_MODELS)} complete)"]
+            for j, (_, label) in enumerate(LLM_MODELS):
+                if j < i:
+                    outputs.append(f"✅ Demo response from {label}: This is a test response!")
+                elif j == i:
+                    outputs.append("🔄 Processing...")
+                else:
+                    outputs.append("⏳ Waiting...")
+            yield outputs
+            time.sleep(1)
+            
+            # Completed state
+            outputs = [f"⏱️ Demo: Completed {i+1}/{len(LLM_MODELS)} models"]
+            for j, (_, label) in enumerate(LLM_MODELS):
+                if j <= i:
+                    outputs.append(f"✅ Demo response from {label}: This is a test response!")
+                else:
+                    outputs.append("⏳ Waiting...")
+            yield outputs
+            time.sleep(0.5)
+        
+        # Final
+        outputs = ["🎉 Demo Complete! Streaming works!"] + [f"✅ Demo response from {label}: This is a test response!" for _, label in LLM_MODELS]
+        yield outputs
     
     def on_submit(q):
         if not q.strip():
-            return ["Please enter a question"] + [""] * len(LLM_MODELS)
-        yield from multi_model_sequential_interface(q)
+            error_outputs = ["Please enter a question"] + [""] * len(LLM_MODELS)
+            yield error_outputs
+            return
+        
+        # Return the generator directly for streaming
+        for outputs in multi_model_sequential_interface(q):
+            yield outputs
     
     btn.click(
         on_submit,
         inputs=[question],
-        outputs=[query_time] + [output_sections[model_label + "_llm"] for _, model_label in LLM_MODELS],
-        queue=True
+        outputs=[query_time] + output_sections
+    )
+    
+    demo_btn.click(
+        demo_mode,
+        inputs=[],
+        outputs=[query_time] + output_sections
     )
     
     question.submit(
         on_submit,
         inputs=[question],
-        outputs=[query_time] + [output_sections[model_label + "_llm"] for _, model_label in LLM_MODELS],
-        queue=True
+        outputs=[query_time] + output_sections
     )
 
 # Launch the application
