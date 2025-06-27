@@ -11,7 +11,7 @@ services:
       - GRADIO_SERVER_PORT=7860
       - OLLAMA_BASE_URL=http://ollama:11434
       - MAX_WORKERS=4
-    command: ["python", "multimodel/multimodel.py"]
+    command: ["python", "hybrid_app.py"]
     networks:
       - langchain-network
     restart: unless-stopped
