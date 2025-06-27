@@ -96,7 +96,7 @@ def real_models(question):
             llm = OllamaLLM(
                 model=model_id,
                 base_url=OLLAMA_BASE_URL,
-                timeout=60  # Increased timeout for Docker
+                timeout=120  # 2 minutes timeout for each model
             )
             result = llm.invoke(question)
             
@@ -164,8 +164,8 @@ def real_models(question):
         
         yield outputs
         
-        # Safety timeout after 60 seconds
-        if elapsed > 60:
+        # Safety timeout after 180 seconds (3 minutes)
+        if elapsed > 180:
             break
     
     # Final results
@@ -181,7 +181,7 @@ def real_models(question):
             else:
                 outputs.append(f"✅ {results[i]}")
         else:
-            outputs.append(f"⏰ {model_name}: Timed out after 60s")
+            outputs.append(f"⏰ {model_name}: Timed out after 3 minutes")
     
     yield outputs
 
@@ -204,16 +204,21 @@ with gr.Blocks(title="Multimodel Streaming Test") as app:
     for _, name in MODELS:
         outputs.append(gr.Textbox(label=f"{name} Result", lines=3))
     
-    # Wire up buttons
-    test_btn.click(simple_test, inputs=[], outputs=[status] + outputs)
-    demo_btn.click(threaded_demo, inputs=[], outputs=[status] + outputs)
-    real_btn.click(real_models, inputs=[question], outputs=[status] + outputs)
+    # Wire up buttons with streaming enabled
+    test_btn.click(simple_test, inputs=[], outputs=[status] + outputs, show_progress="minimal")
+    demo_btn.click(threaded_demo, inputs=[], outputs=[status] + outputs, show_progress="minimal")  
+    real_btn.click(real_models, inputs=[question], outputs=[status] + outputs, show_progress="minimal")
 
 if __name__ == "__main__":
     print("🚀 Starting multimodel app...")
-    app.queue().launch(
+    app.queue(
+        default_concurrency_limit=20,
+        max_size=50
+    ).launch(
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
-        show_error=True
+        show_error=True,
+        enable_queue=True,
+        max_threads=10
     )
