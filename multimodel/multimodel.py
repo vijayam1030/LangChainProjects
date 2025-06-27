@@ -84,10 +84,19 @@ def real_models(question):
         """Call a real LLM model in a thread"""
         try:
             print(f"🚀 Starting {model_name}...")
+            
+            # First try to pull the model if it doesn't exist
+            try:
+                import subprocess
+                subprocess.run(['ollama', 'pull', model_id], 
+                             capture_output=True, timeout=60, check=False)
+            except Exception as pull_error:
+                print(f"⚠️ Could not pull {model_id}: {pull_error}")
+            
             llm = OllamaLLM(
                 model=model_id,
                 base_url=OLLAMA_BASE_URL,
-                timeout=30  # 30 second timeout
+                timeout=60  # Increased timeout for Docker
             )
             result = llm.invoke(question)
             

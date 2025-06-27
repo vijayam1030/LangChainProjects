@@ -12,9 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the multimodel app code
 COPY . .
 
-# Pull llama2 model before running the app
-RUN pip install --no-cache-dir ollama && \
-    ollama pull llama2 || true
+# Note: Models will be pulled at runtime to avoid Docker build timeouts
+# The models used are: tinyllama:1.1b, qwen3:1.7b, gemma3:1b
 
 # Expose Gradio default port
 EXPOSE 7860

@@ -11,12 +11,13 @@ services:
       - GRADIO_SERVER_PORT=7860
       - OLLAMA_BASE_URL=http://ollama:11434
       - MAX_WORKERS=4
-    command: ["python", "hybrid_app.py"]
+    command: ["python", "multimodel/multimodel.py"]
     networks:
       - langchain-network
     restart: unless-stopped
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
 
   # RAG Streamlit app
   rag-streamlit:
@@ -73,6 +74,11 @@ services:
     networks:
       - langchain-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     # Uncomment if you have GPU support
     # deploy:
     #   resources:
