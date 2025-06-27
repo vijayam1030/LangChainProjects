@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # Multi-model Gradio app
+  multimodel:
+    build: .
+    ports:
+      - "7860:7860"
+    environment:
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - MAX_WORKERS=4
+    command: ["python", "multimodel/multimodel.py"]
+    networks:
+      - langchain-network
+    restart: unless-stopped
+    depends_on:
+      - ollama
+
+  # RAG Streamlit app
+  rag-streamlit:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - OLLAMA_BASE_URL=http://ollama:11434
+    command: ["streamlit", "run", "rag/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    networks:
+      - langchain-network
+    restart: unless-stopped
+    depends_on:
+      - ollama
+
+  # RAG Gradio app
+  rag-gradio:
+    build: .
+    ports:
+      - "7861:7861"
+    environment:
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7861
+      - OLLAMA_BASE_URL=http://ollama:11434
+    command: ["python", "rag/app-gradio.py"]
+    networks:
+      - langchain-network
+    restart: unless-stopped
+    depends_on:
+      - ollama
+
+  # MCP Server
+  mcp-server:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    command: ["python", "mcp/app.py"]
+    networks:
+      - langchain-network
+    restart: unless-stopped
+    depends_on:
+      - ollama
+
+  # Ollama service
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - langchain-network
+    restart: unless-stopped
+    # Uncomment if you have GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+networks:
+  langchain-network:
+    driver: bridge
+
+volumes:
+  ollama_data:

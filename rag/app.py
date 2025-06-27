@@ -46,7 +46,7 @@ def get_wikipedia_docs_and_vectorstore(question, lang="en", max_docs=5):
         return [], None
     text_splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=0)
     split_docs = text_splitter.create_documents(docs)
-    embeddings = OllamaEmbeddings(model="llama2")
+    embeddings = OllamaEmbeddings(model="tinyllama:1.1b")
     vectorstore = FAISS.from_documents(split_docs, embeddings)
     return wiki_docs, vectorstore
 
@@ -63,7 +63,7 @@ def rag_answer(question):
         template="Use the following context to answer the question.\nContext: {context}\nQuestion: {question}\nAnswer:"
     )
     # Initialize the Ollama LLM
-    llm = OllamaLLM(model="llama2")
+    llm = OllamaLLM(model="tinyllama:1.1b")
     # 5. Build the RAG chain: retrieve, prompt, generate, and parse output
     rag_chain = (
         {"context": retriever, "question": RunnablePassthrough()}
@@ -80,7 +80,7 @@ def rag_answer(question):
 # Function to get the LLM-only answer
 def llm_only_answer(question):
     # Directly use the LLM without Wikipedia context
-    llm = OllamaLLM(model="llama2")
+    llm = OllamaLLM(model="tinyllama:1.1b")
     return llm.invoke(question)
 
 # If the user has entered a question

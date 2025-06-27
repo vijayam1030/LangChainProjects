@@ -19,8 +19,8 @@ import time
 # Cache Wikipedia docs and their embeddings/vectorstore for each question
 from functools import lru_cache
 
-# List of available LLM models
-LLM_MODELS = ["llama2",  "qwen3:1.7b", "gemma3:1b", "deepseek-r1:1.5b", "mistral:7b"]
+# List of available LLM models (only ones that are actually pulled)
+LLM_MODELS = ["tinyllama:1.1b"]
 
 def get_wikipedia_docs_and_vectorstore(question, lang="en", max_docs=5):
     loader = WikipediaLoader(query=question, lang=lang, load_max_docs=max_docs)
@@ -30,7 +30,7 @@ def get_wikipedia_docs_and_vectorstore(question, lang="en", max_docs=5):
         return [], None
     text_splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=0)
     split_docs = text_splitter.create_documents(docs)
-    embeddings = OllamaEmbeddings(model="llama2")  # Always use Wikipedia for RAG
+    embeddings = OllamaEmbeddings(model="tinyllama:1.1b")  # Always use Wikipedia for RAG
     vectorstore = FAISS.from_documents(split_docs, embeddings)
     return wiki_docs, vectorstore
 

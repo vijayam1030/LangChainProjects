@@ -8,4 +8,6 @@ wikipedia
 streamlit
 nbformat
 nbconvert
+requests
+gradio
 gradio
